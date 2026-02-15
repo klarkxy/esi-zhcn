@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-AI 翻译模块
-提供与 AI API 交互的通用功能，可被多个脚本共享使用
+AI 翻译模块 - 重构版
+采用回调机制的 AIClient，负责向 API 批量发送和接收请求
 """
 
 import re
 import requests
 import concurrent.futures
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Callable, Tuple
 from dataclasses import dataclass
+import time
 
 
 @dataclass
@@ -24,8 +25,277 @@ class TranslationItem:
     needs_translation: bool = True
 
 
+class AIClient:
+    """
+    AI 客户端，负责向 API 批量发送和接收请求
+    采用回调机制处理提示词生成和结果解析
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        api_url: str,
+        model_name: str,
+        request_options: Dict[str, Any],
+        batch_size: int = 20,
+        max_workers: int = 5,
+        max_retries: int = 3,
+        retry_delay: int = 2,
+    ):
+        """
+        初始化 AI 客户端
+
+        Args:
+            api_key: API 密钥
+            api_url: API 地址
+            model_name: 模型名称
+            request_options: 请求选项字典（temperature, top_p, timeout等）
+            batch_size: 批量大小
+            max_workers: 最大工作线程数
+            max_retries: 最大重试次数
+            retry_delay: 重试延迟（秒）
+        """
+        self.api_key = api_key
+        self.api_url = api_url
+        self.model_name = model_name
+        self.request_options = request_options
+        self.batch_size = batch_size
+        self.max_workers = max_workers
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+
+        # 缓存
+        self.cache: Dict[str, Any] = {}
+
+        # 会话
+        self.session = requests.Session()
+
+    def process_batch(
+        self,
+        batch_items: List[Any],
+        prompt_callback: Callable[[List[Any]], str],
+        result_callback: Callable[[str, List[Any]], Dict[int, Any]],
+        cache_key_callback: Optional[Callable[[Any], str]] = None,
+    ) -> Dict[int, Any]:
+        """
+        处理一个批次的请求
+
+        Args:
+            batch_items: 批次项目列表
+            prompt_callback: 提示词生成回调函数，接收批次项目列表，返回提示词
+            result_callback: 结果解析回调函数，接收API响应和批次项目列表，返回解析后的结果字典
+            cache_key_callback: 缓存键生成回调函数（可选），接收项目，返回缓存键
+
+        Returns:
+            解析后的结果字典，键为项目索引，值为结果
+        """
+        if not batch_items:
+            return {}
+
+        # 检查缓存
+        cached_results = {}
+        remaining_items = []
+        remaining_indices = []
+
+        if cache_key_callback:
+            for i, item in enumerate(batch_items):
+                cache_key = cache_key_callback(item)
+                if cache_key in self.cache:
+                    cached_results[i] = self.cache[cache_key]
+                else:
+                    remaining_items.append(item)
+                    remaining_indices.append(i)
+        else:
+            remaining_items = batch_items
+            remaining_indices = list(range(len(batch_items)))
+
+        # 如果没有需要请求的项，直接返回缓存
+        if not remaining_items:
+            return cached_results
+
+        # 生成提示词
+        prompt = prompt_callback(remaining_items)
+
+        # 发送请求（带重试机制）
+        response_text = self._send_request_with_retry(prompt)
+
+        if not response_text:
+            # 请求失败，返回缓存的结果，对于未缓存的项返回None
+            all_results = cached_results.copy()
+            for idx in remaining_indices:
+                all_results[idx] = None
+            return all_results
+
+        # 解析结果
+        batch_results = result_callback(response_text, remaining_items)
+
+        # 合并结果并更新缓存
+        all_results = cached_results.copy()
+        for idx_in_remaining, result in batch_results.items():
+            if idx_in_remaining < len(remaining_indices):
+                original_idx = remaining_indices[idx_in_remaining]
+                item = remaining_items[idx_in_remaining]
+
+                if result is not None:
+                    all_results[original_idx] = result
+                    # 更新缓存
+                    if cache_key_callback:
+                        cache_key = cache_key_callback(item)
+                        self.cache[cache_key] = result
+
+        return all_results
+
+    def _send_request_with_retry(self, prompt: str) -> Optional[str]:
+        """
+        发送请求，带重试机制
+
+        Args:
+            prompt: 提示词
+
+        Returns:
+            API响应文本，失败时返回None
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False,
+            **self.request_options,
+        }
+
+        for attempt in range(self.max_retries):
+            try:
+                response = self.session.post(
+                    self.api_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.request_options.get("timeout", 120),
+                )
+
+                if response.status_code == 200:
+                    result = response.json()
+                    # DeepSeek API返回格式: choices[0].message.content
+                    if "choices" in result and len(result["choices"]) > 0:
+                        return (
+                            result["choices"][0]
+                            .get("message", {})
+                            .get("content", "")
+                            .strip()
+                        )
+                    else:
+                        # 备用方案
+                        return result.get("response", "").strip()
+                else:
+                    print(
+                        f"警告：API请求失败 ({response.status_code})，第{attempt + 1}次重试"
+                    )
+
+            except Exception as e:
+                print(f"警告：请求异常 ({e})，第{attempt + 1}次重试")
+
+            # 如果不是最后一次尝试，等待后重试
+            if attempt < self.max_retries - 1:
+                time.sleep(self.retry_delay)
+
+        print(f"错误：请求失败，已达到最大重试次数 {self.max_retries}")
+        return None
+
+    def process_batches(
+        self,
+        all_items: List[Any],
+        prompt_callback: Callable[[List[Any]], str],
+        result_callback: Callable[[str, List[Any]], Dict[int, Any]],
+        cache_key_callback: Optional[Callable[[Any], str]] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+    ) -> List[Any]:
+        """
+        处理所有批次
+
+        Args:
+            all_items: 所有项目列表
+            prompt_callback: 提示词生成回调函数
+            result_callback: 结果解析回调函数
+            cache_key_callback: 缓存键生成回调函数（可选）
+            progress_callback: 进度回调函数（可选），接收当前批次和总批次
+
+        Returns:
+            所有项目的结果列表，顺序与输入相同
+        """
+        if not all_items:
+            return []
+
+        # 按批次分组
+        batches = []
+        for i in range(0, len(all_items), self.batch_size):
+            batch = all_items[i : i + self.batch_size]
+            batches.append(batch)
+
+        total_batches = len(batches)
+        print(
+            f"总共 {len(all_items)} 个项目，分成 {total_batches} 个批次 (batch_size={self.batch_size})"
+        )
+
+        # 使用线程池并发处理批次
+        all_results: List[Optional[Any]] = [None] * len(all_items)
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.max_workers
+        ) as executor:
+            # 提交所有批次任务
+            future_to_batch = {}
+            for batch_idx, batch in enumerate(batches):
+                start_idx = batch_idx * self.batch_size
+                future = executor.submit(
+                    self.process_batch,
+                    batch,
+                    prompt_callback,
+                    result_callback,
+                    cache_key_callback,
+                )
+                future_to_batch[future] = (batch_idx, start_idx, batch)
+
+            # 处理完成的任务
+            for future in concurrent.futures.as_completed(future_to_batch):
+                batch_idx, start_idx, batch = future_to_batch[future]
+                try:
+                    batch_results = future.result()
+                    # 将结果放入正确的位置
+                    for relative_idx, result in batch_results.items():
+                        absolute_idx = start_idx + relative_idx
+                        if absolute_idx < len(all_results):
+                            all_results[absolute_idx] = result
+
+                    # 调用进度回调
+                    if progress_callback:
+                        progress_callback(batch_idx + 1, total_batches)
+
+                    print(f"批次 {batch_idx + 1}/{total_batches} 完成")
+                except Exception as e:
+                    print(f"批次 {batch_idx + 1} 处理失败: {e}")
+                    # 对于失败的批次，使用None
+                    for i in range(len(batch)):
+                        absolute_idx = start_idx + i
+                        if absolute_idx < len(all_results):
+                            all_results[absolute_idx] = None
+
+        # 确保所有项都有结果
+        final_results: List[Any] = []
+        for i in range(len(all_results)):
+            result = all_results[i]
+            final_results.append(result)
+
+        return final_results
+
+
 class AITranslator:
-    """AI 翻译器基类，提供通用的 AI 翻译功能"""
+    """
+    AI 翻译器（基于 AIClient 的回调实现）
+    保持与旧版本兼容的接口
+    """
 
     def __init__(
         self,
@@ -35,6 +305,7 @@ class AITranslator:
         translation_options: Dict[str, Any],
         batch_size: int = 20,
         max_workers: int = 5,
+        glossary_path: Optional[str] = None,
     ):
         """
         初始化 AI 翻译器
@@ -46,16 +317,24 @@ class AITranslator:
             translation_options: 翻译选项字典
             batch_size: 批量大小
             max_workers: 最大工作线程数
+            glossary_path: 名词表文件路径
         """
-        self.api_key = api_key
-        self.api_url = api_url
-        self.model_name = model_name
-        self.translation_options = translation_options
-        self.batch_size = batch_size
-        self.max_workers = max_workers
+        # 创建 AI 客户端
+        self.client = AIClient(
+            api_key=api_key,
+            api_url=api_url,
+            model_name=model_name,
+            request_options=translation_options,
+            batch_size=batch_size,
+            max_workers=max_workers,
+            max_retries=translation_options.get("max_retries", 3),
+            retry_delay=translation_options.get("retry_delay", 2),
+        )
 
-        # 缓存已翻译的文本
-        self.translation_cache: Dict[str, str] = {}
+        # 名词表
+        self.glossary: Dict[str, str] = {}
+        if glossary_path:
+            self.load_glossary(glossary_path)
 
     def is_english_text(self, text: str) -> bool:
         """判断文本是否主要是英文"""
@@ -107,10 +386,6 @@ class AITranslator:
             return True
 
         # 检查英文值中是否包含"__xxx__"模式的变量
-        # 常见的游戏变量模式：__ENTITY__、__ITEM__、__FLUID__、__1__、__2__、__REMARK_COLOR_BEGIN__、__REMARK_COLOR_END__等
-        import re
-
-        # 匹配"__xxx__"模式的变量
         variable_pattern = r"__[A-Za-z0-9_]+__"
         en_variables = re.findall(variable_pattern, en_value)
 
@@ -124,17 +399,48 @@ class AITranslator:
 
         return False
 
-    def create_batch_prompt(
-        self,
-        items: List[TranslationItem],
-        game_context: str = "《异星工厂》是一款科幻/工业自动化游戏，主题包括科技、工厂、自动化、神秘、哲学等。",
-    ) -> str:
+    def load_glossary(self, glossary_path: str) -> None:
         """
-        为批量翻译创建提示词
+        加载名词表文件
+
+        Args:
+            glossary_path: 名词表文件路径
+        """
+        try:
+            import os
+            from pathlib import Path
+
+            glossary_file = Path(glossary_path)
+            if not glossary_file.exists():
+                print(f"警告: 名词表文件不存在: {glossary_path}")
+                return
+
+            with open(glossary_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+
+                    # 解析 "英文: 中文" 格式
+                    if ":" in line:
+                        parts = line.split(":", 1)
+                        if len(parts) == 2:
+                            english = parts[0].strip()
+                            chinese = parts[1].strip()
+                            if english and chinese:
+                                self.glossary[english] = chinese
+
+            print(f"已加载名词表，包含 {len(self.glossary)} 个术语")
+
+        except Exception as e:
+            print(f"加载名词表失败: {e}")
+
+    def _create_batch_prompt(self, items: List[TranslationItem]) -> str:
+        """
+        为批量翻译创建提示词（回调函数）
 
         Args:
             items: 翻译项列表
-            game_context: 游戏背景描述
 
         Returns:
             格式化后的提示词
@@ -145,6 +451,16 @@ class AITranslator:
             items_text += f"{i}. Section: {item.section}, Key: {item.key}\n"
             items_text += f"   英文: {item.en_value}\n\n"
 
+        # 构建名词表参考部分
+        glossary_text = ""
+        if self.glossary:
+            glossary_text = "\n名词表参考（请优先使用以下术语的翻译）：\n"
+            for english, chinese in self.glossary.items():
+                glossary_text += f"- {english}: {chinese}\n"
+            glossary_text += "\n"
+
+        game_context = "《异星工厂》是一款科幻/工业自动化游戏，主题包括科技、工厂、自动化、神秘、哲学等。"
+
         prompt = f"""请将以下游戏文本从英文翻译成简体中文。要求：
 
 重要规则：
@@ -154,9 +470,11 @@ class AITranslator:
 4. 在准确的基础上，尽量让翻译有趣、生动、有游戏感
 5. 可以适当加入幽默感，但不要过度，以免失去原文的专业和神秘氛围
 6. 保持文本的流畅性和可读性
+7. 如果文本中包含名词表中的术语，请优先使用名词表中的翻译
 
 游戏背景：{game_context}
 
+{glossary_text}
 请按以下格式回复，严格保持编号对应：
 1. 中文翻译：[翻译结果1]
 2. 中文翻译：[翻译结果2]
@@ -169,7 +487,7 @@ class AITranslator:
 
         return prompt
 
-    def parse_batch_response(
+    def _parse_batch_response(
         self, response_text: str, items: List[TranslationItem]
     ) -> Dict[int, str]:
         """解析批量翻译的响应"""
@@ -203,105 +521,9 @@ class AITranslator:
 
         return translations
 
-    def translate_batch(
-        self,
-        items: List[TranslationItem],
-        game_context: str = "《异星工厂》是一款科幻/工业自动化游戏，主题包括科技、工厂、自动化、神秘、哲学等。",
-    ) -> Dict[int, str]:
-        """翻译一批文本"""
-
-        # 检查缓存
-        cached_translations = {}
-        remaining_items = []
-        remaining_indices = []
-
-        for i, item in enumerate(items):
-            cache_key = f"{item.section}:{item.key}:{item.en_value}"
-            if cache_key in self.translation_cache:
-                cached_translations[i] = self.translation_cache[cache_key]
-            else:
-                remaining_items.append(item)
-                remaining_indices.append(i)
-
-        # 如果没有需要翻译的项，直接返回缓存
-        if not remaining_items:
-            return cached_translations
-
-        # 构建批量提示词
-        prompt = self.create_batch_prompt(remaining_items, game_context)
-
-        try:
-            headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            }
-
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                json={
-                    "model": self.model_name,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                    "temperature": self.translation_options.get("temperature", 0.1),
-                    "top_p": self.translation_options.get("top_p", 0.9),
-                    "max_tokens": 4000,  # 增加token限制以容纳批量翻译
-                },
-                timeout=self.translation_options.get("timeout", 120),  # 增加超时时间
-            )
-
-            if response.status_code == 200:
-                result = response.json()
-                # DeepSeek API返回格式: choices[0].message.content
-                if "choices" in result and len(result["choices"]) > 0:
-                    translated_text = (
-                        result["choices"][0]
-                        .get("message", {})
-                        .get("content", "")
-                        .strip()
-                    )
-                else:
-                    # 备用方案
-                    translated_text = result.get("response", "").strip()
-
-                # 解析批量响应
-                batch_translations = self.parse_batch_response(
-                    translated_text, remaining_items
-                )
-
-                # 合并结果并更新缓存
-                all_translations = cached_translations.copy()
-                for idx_in_remaining, translation in batch_translations.items():
-                    if idx_in_remaining < len(remaining_indices):
-                        original_idx = remaining_indices[idx_in_remaining]
-                        item = remaining_items[idx_in_remaining]
-
-                        if translation:
-                            all_translations[original_idx] = translation
-                            # 更新缓存
-                            cache_key = f"{item.section}:{item.key}:{item.en_value}"
-                            self.translation_cache[cache_key] = translation
-                        else:
-                            # 翻译失败，使用原文
-                            print(f"警告：翻译返回为空，使用原文：{item.en_value}")
-                            all_translations[original_idx] = item.en_value
-
-                return all_translations
-            else:
-                print(f"警告：API请求失败 ({response.status_code})")
-                # 返回缓存的结果，对于未缓存的项使用原文
-                all_translations = cached_translations.copy()
-                for i, idx in enumerate(remaining_indices):
-                    all_translations[idx] = remaining_items[i].en_value
-                return all_translations
-
-        except Exception as e:
-            print(f"警告：翻译失败 ({e})")
-            # 返回缓存的结果，对于未缓存的项使用原文
-            all_translations = cached_translations.copy()
-            for i, idx in enumerate(remaining_indices):
-                all_translations[idx] = remaining_items[i].en_value
-            return all_translations
+    def _get_cache_key(self, item: TranslationItem) -> str:
+        """获取缓存键"""
+        return f"{item.section}:{item.key}:{item.en_value}"
 
     def translate_items(
         self,
@@ -313,51 +535,20 @@ class AITranslator:
         if not items:
             return []
 
-        # 按批次分组
-        batches = []
-        for i in range(0, len(items), self.batch_size):
-            batch = items[i : i + self.batch_size]
-            batches.append(batch)
-
-        print(f"总共 {len(items)} 个词条，分成 {len(batches)} 个批次")
-
-        # 使用线程池并发处理批次
-        all_translations: List[Optional[str]] = [None] * len(items)
-
-        with concurrent.futures.ThreadPoolExecutor(
-            max_workers=self.max_workers
-        ) as executor:
-            # 提交所有批次任务
-            future_to_batch = {}
-            for batch_idx, batch in enumerate(batches):
-                start_idx = batch_idx * self.batch_size
-                future = executor.submit(self.translate_batch, batch, game_context)
-                future_to_batch[future] = (batch_idx, start_idx, batch)
-
-            # 处理完成的任务
-            for future in concurrent.futures.as_completed(future_to_batch):
-                batch_idx, start_idx, batch = future_to_batch[future]
-                try:
-                    batch_results = future.result()
-                    # 将结果放入正确的位置
-                    for relative_idx, translation in batch_results.items():
-                        absolute_idx = start_idx + relative_idx
-                        if absolute_idx < len(all_translations):
-                            all_translations[absolute_idx] = translation
-
-                    print(f"批次 {batch_idx + 1}/{len(batches)} 完成")
-                except Exception as e:
-                    print(f"批次 {batch_idx + 1} 处理失败: {e}")
-                    # 对于失败的批次，使用原文
-                    for i in range(len(batch)):
-                        absolute_idx = start_idx + i
-                        if absolute_idx < len(all_translations):
-                            all_translations[absolute_idx] = batch[i].en_value
+        # 使用 AIClient 处理批次
+        translations = self.client.process_batches(
+            all_items=items,
+            prompt_callback=self._create_batch_prompt,
+            result_callback=lambda response_text, batch_items: self._parse_batch_response(
+                response_text, batch_items
+            ),
+            cache_key_callback=self._get_cache_key,
+            progress_callback=lambda current, total: None,
+        )
 
         # 确保所有项都有翻译
         final_translations: List[str] = []
-        for i in range(len(all_translations)):
-            translation = all_translations[i]
+        for i, translation in enumerate(translations):
             if translation is None:
                 final_translations.append(items[i].en_value)
             else:
@@ -366,43 +557,68 @@ class AITranslator:
         return final_translations
 
 
-class BatchTranslator(AITranslator):
-    """批量翻译器（兼容旧名称）"""
+def create_batch_translator(
+    batch_size: Optional[int] = None,
+    max_workers: int = 10,
+    glossary_path: Optional[str] = None,
+) -> AITranslator:
+    """
+    创建批量翻译器（工厂函数）
 
-    def __init__(self, batch_size: int = 20, max_workers: int = 5):
-        """
-        初始化批量翻译器
+    从 config.py 加载配置，保持向后兼容性
 
-        注意：此构造函数从 config.py 加载配置，保持向后兼容性
-        """
-        import sys
-        from pathlib import Path
+    Args:
+        batch_size: 批量大小，如果为None则使用配置文件中的值
+        max_workers: 最大工作线程数（增加默认值以加快速度）
+        glossary_path: 名词表文件路径
 
-        # 添加scripts目录到路径，以便导入config
-        script_dir = Path(__file__).parent
-        if str(script_dir) not in sys.path:
-            sys.path.insert(0, str(script_dir))
+    Returns:
+        配置好的 AITranslator 实例
+    """
+    import sys
+    from pathlib import Path
 
-        try:
-            from config import API_KEY, API_URL, MODEL_NAME, TRANSLATION_OPTIONS
-        except ImportError:
-            print("请复制 scripts/config.py.template 为 scripts/config.py")
-            exit(1)
+    # 添加scripts目录到路径，以便导入config
+    script_dir = Path(__file__).parent
+    if str(script_dir) not in sys.path:
+        sys.path.insert(0, str(script_dir))
 
-        # 调用父类构造函数
-        super().__init__(
-            api_key=API_KEY,
-            api_url=API_URL,
-            model_name=MODEL_NAME,
-            translation_options=TRANSLATION_OPTIONS,
-            batch_size=batch_size,
-            max_workers=max_workers,
+    try:
+        from config import (
+            API_KEY,
+            API_URL,
+            MODEL_NAME,
+            TRANSLATION_OPTIONS,
+            BATCH_SIZE,
         )
+    except ImportError:
+        print("请复制 scripts/config.py.template 为 scripts/config.py")
+        exit(1)
+
+    # 如果未提供batch_size，则使用配置文件中的值
+    if batch_size is None:
+        batch_size = BATCH_SIZE
+
+    # 创建 AITranslator 实例
+    return AITranslator(
+        api_key=API_KEY,
+        api_url=API_URL,
+        model_name=MODEL_NAME,
+        translation_options=TRANSLATION_OPTIONS,
+        batch_size=batch_size,
+        max_workers=max_workers,
+        glossary_path=glossary_path,
+    )
+
+
+# 为了向后兼容，保留 BatchTranslator 作为 create_batch_translator 的别名
+BatchTranslator = create_batch_translator
 
 
 # 导出常用类和函数
 __all__ = [
     "TranslationItem",
+    "AIClient",
     "AITranslator",
     "BatchTranslator",
     "is_english_text",  # 导出为独立函数

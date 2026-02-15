@@ -1,0 +1,60 @@
+Advanced Assembling Machine: 高级组装机
+Advanced Chemical Plant: 高级化工厂
+Advanced Furnace: 高级熔炉
+Advanced Lab / Big Lab: 高级研究中心
+Advanced Tech Card: 高级科技卡
+AI Core: AI核心
+Antimatter Reactor: 反物质反应堆
+Beacon (Copper Beacon / Iron Beacon / Alien Beacon): 插件效果分享塔 (冷却型/紧凑型/异星型)
+Bio Chamber / Bio Reactor: 生物舱 / 生物反应堆
+Black Hole: 黑洞 (发生器)
+Burner Assembler / Burner Heater / Burner Inserter / Burner Quarry: 热能组装机 / 燃烧加热器 / 热能机械臂 / 热能采矿场
+Cargo Bot / Construction Bot / Logistic Bot: 物流机器人 / 建设机器人
+Computer Core / Quantum Computer: 计算机核心 / 量子计算机
+Crusher / Advanced Crusher: 粉碎机 / 先进粉碎机
+Cryo Container / Cryoflux: 低温容器 / 低温通量
+Deep Drill / Advanced Deep Drill: 深层钻机 / 先进深层钻机
+Destill Tower / Advanced Destill Tower: 蒸馏塔 / 先进蒸馏塔
+Dirty Water: 污水
+Drone / Drone Port: 无人机 / 无人机端口
+Electricity Age / Steam Age / Computer Age / Quantum Age / Exotic Age: 电气时代 / 蒸汽时代 / 计算机时代 / 量子时代 / 异域时代
+Exotic Assembler / Exotic Matter / Exotic Rock: 异域组装机 / 异域物质 / 异域岩石
+Fission Tech / Fusion Data: 核裂变数据 / 核聚变数据
+Fusion Reactor: 核聚变反应堆
+Gate (Planetary Teleporter): (行星)传送器 / 跨维度传送门
+Glass / Molten Glass: 玻璃 / 玻璃液
+Greenhouse: 温室
+High-Temperature Reactor (HTR): 高温反应堆
+Imersite / Imersium: 紫晶 / 紫晶(材料)
+Induction Matrix: 感应矩阵
+Insulated Pipe / Insulated Tank: 绝热管道 / 绝热罐
+Intergalactic Transceiver: 星际收发器
+Krastorio 2 (K2): Krastorio 2模组
+Loader (Advanced/Superior/Express/Fast): 装卸机 (高级/卓越/极速/高速)
+Matter Stabilizer: 物质稳定剂
+Metalworks: 金属加工厂
+Mineral Water: 矿物质水
+Module (Speed/Productivity/Efficiency/Gauss): 插件 (速度/产能/节能/高斯)
+Morphium: 通元
+Neodym: 钕
+Neutron Collector / Neutron Activator / Neutron Container: 中子收集器 / 中子活化器 / 中子容器
+Nitric Acid: 硝酸
+Nuclear Waste: 核废料
+Oxygen / Liquid Oxygen / Nitrogen / Liquid Nitrogen: 氧气 / 液氧 / 氮气 / 液氮
+Plasma: 等离子体
+Planetary Teleporter: 行星传送器
+Pollution Filter: 污染过滤器
+Rare Metal: 稀有金属
+Rocket Silo: 火箭发射井
+Satellite (Mining/Exploration/Watch): 卫星 (采矿/探索/观测)
+Sentinel: 岗哨
+Shelter: 庇护所
+Solar Panel (Advanced/Portable): 太阳能板 (高级/便携式)
+Space Data / Simulation Data / Research Data: 太空数据 / 模拟数据 / 研究数据
+Steam Assembler / Steam Crusher: 蒸汽组装机 / 蒸汽粉碎机
+Strongbox / Warehouse: 货柜 / 货仓
+Superior Inserter / Superior Belt / Superior Splitter: 卓越机械臂 / 卓越传送带 / 卓越分流器
+Tech Card (Automation/Logistics/Military/etc.): 科技卡 (自动化/物流/军事等)
+Tesla Coil: 特斯拉线圈塔
+Vehicle Fuel: 载具燃料
+Wind Turbine: 风力涡轮机
