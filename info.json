@@ -1,0 +1,11 @@
+{
+	"name": "esi-zhcn",
+	"version": "0.1.0",
+	"title": "Exotic Space Industries: Remembrance个人汉化",
+	"author": "Klarkxy",
+	"description": "本模组仅包含「Exotic Space Industries: Remembrance」的汉化文件，依赖于原模组才能使用。",
+	"factorio_version":"2.0",
+	"dependencies":  [
+		"exotic-space-industries-remembrance"
+		]
+}
