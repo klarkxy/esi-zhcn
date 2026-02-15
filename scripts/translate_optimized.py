@@ -64,29 +64,36 @@ class BatchTranslator:
         if re.search(r"[\u4e00-\u9fff]", text):
             return False
 
-        # 检查是否包含常见的英文单词
-        english_words = [
-            "the",
-            "and",
-            "for",
-            "with",
-            "this",
-            "that",
-            "from",
-            "have",
-            "are",
-            "you",
-            "is",
-            "in",
-            "to",
-        ]
-        text_lower = text.lower()
-        for word in english_words:
-            if f" {word} " in f" {text_lower} ":
-                return True
+        # 检查是否包含拉丁字母（a-zA-Z）
+        if not re.search(r"[a-zA-Z]", text):
+            return False  # 不包含拉丁字母，不是英文
 
-        # 如果文本长度超过10个字符且没有中文字符，假设是英文
-        if len(text) > 10:
+        # 如果文本只包含拉丁字母、数字、空格和常见标点，假设是英文
+        # 允许的字符：字母、数字、空格、. , ! ? : ; - _ ' " ( ) [ ] { } < > / \ | = + & % $ # @
+        # 简化：如果文本中超过50%的字符是拉丁字母或常见英文标点，则认为是英文
+        import string
+
+        # 计算拉丁字母和常见英文标点的数量
+        latin_and_punct = 0
+        total_chars = 0
+
+        for char in text:
+            if char in string.ascii_letters or char in string.digits:
+                latin_and_punct += 1
+            elif char in " .,!?:;-_'\"()[]{}<>/\\|=+&%$#@":
+                latin_and_punct += 1
+            elif char == "\n" or char == "\t" or char == "\r":
+                continue  # 忽略控制字符
+            else:
+                # 其他字符（可能是其他语言的字符）
+                pass
+            total_chars += 1
+
+        if total_chars == 0:
+            return False
+
+        # 如果超过70%的字符是拉丁字母或英文标点，则认为是英文
+        if latin_and_punct / total_chars >= 0.7:
             return True
 
         return False
