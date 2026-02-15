@@ -2,3 +2,4 @@ log/
 todo.md
 *.backup
 __pycache__/
+scripts/config.local.py

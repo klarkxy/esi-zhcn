@@ -1,0 +1,15 @@
+# 本地配置文件模板
+# 将此文件复制为 config.local.py 并修改配置
+# config.local.py 已被添加到 .gitignore，不会提交到git
+
+# API配置
+API_KEY = ""  
+API_URL = "https://api.deepseek.com"  
+MODEL_NAME = "deepseek-chat"  # 使用的模型名称
+
+# 翻译选项
+TRANSLATION_OPTIONS = {
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "timeout": 60,
+}
