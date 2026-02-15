@@ -109,7 +109,7 @@ def merge_translations(
     if backup and zh_file.exists():
         backup_file = zh_file.with_suffix(zh_file.suffix + ".backup")
         shutil.copy2(zh_file, backup_file)
-        print(f"  已创建备份: {backup_file.name}")
+        print(f"已创建备份: {backup_file.name}")
 
     # 统计
     added_count = 0
@@ -163,9 +163,9 @@ def merge_translations(
 
                 # 添加键值对
                 if is_commented_in_en:
-                    new_lines.append(f"  ##{key}={en_value}\n")
+                    new_lines.append(f"##{key}={en_value}\n")
                 else:
-                    new_lines.append(f"  {key}={en_value}\n")
+                    new_lines.append(f"{key}={en_value}\n")
             else:
                 # section存在，但key不存在
                 # 找到section的结束位置（下一个section开始或文件结束）
@@ -193,9 +193,9 @@ def merge_translations(
 
                     # 插入键值对
                     if is_commented_in_en:
-                        new_lines.insert(insert_pos, f"  ##{key}={en_value}\n")
+                        new_lines.insert(insert_pos, f"##{key}={en_value}\n")
                     else:
-                        new_lines.insert(insert_pos, f"  {key}={en_value}\n")
+                        new_lines.insert(insert_pos, f"{key}={en_value}\n")
         else:
             # 中文文件中已存在
             # 根据需求，如果已经有中文翻译，应该保留中文，不更新为英文
@@ -273,11 +273,11 @@ def main():
 
         if not zh_file.exists():
             # 中文文件不存在，从英文文件创建
-            print(f"  中文文件不存在，正在创建...")
+            print(f"中文文件不存在，正在创建...")
             added = create_zh_file_from_en(en_file, zh_file)
             total_created += 1
             total_added += added
-            print(f"  已创建文件，添加了 {added} 个词条")
+            print(f"已创建文件，添加了 {added} 个词条")
         else:
             # 中文文件存在，合并词条
             added, updated = merge_translations(en_file, zh_file)
@@ -285,9 +285,9 @@ def main():
             total_updated += updated
 
             if added > 0 or updated > 0:
-                print(f"  新增 {added} 个词条，更新 {updated} 个词条")
+                print(f"新增 {added} 个词条，更新 {updated} 个词条")
             else:
-                print(f"  无需更新")
+                print(f"无需更新")
 
         print()
 
