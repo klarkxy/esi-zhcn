@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """主翻译脚本：批量翻译游戏本地化文件"""
 
 from pathlib import Path

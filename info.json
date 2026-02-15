@@ -1,12 +1,14 @@
 {
 	"name": "esi-zhcn",
 	"version": "0.1.0",
-	"title": "Exotic Space Industries: Remembrance个人汉化",
+	"title": "ESI: R 个人汉化",
 	"author": "Klarkxy",
-	"description": "本模组仅包含「Exotic Space Industries: Remembrance」的汉化文件，依赖于原模组才能使用。",
+	"homepage": "https://github.com/klarkxy/esi-zhcn",
+	"description": "本模组为「Exotic Space Industries: Remembrance」的中文汉化，兼容 Krastorio2 。",
 	"factorio_version":"2.0",
 	"dependencies":  [
 		"exotic-space-industries-remembrance",
+		"? Krastorio2",
 		"? Krastorio2-spaced-out"
 		]
 }
