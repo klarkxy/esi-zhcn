@@ -19,7 +19,7 @@ def main():
     print("=" * 60)
 
     # 获取当前脚本所在目录
-    script_dir = Path(__file__).parent.absolute()
+    script_dir = Path(__file__).parent.parent.absolute()
     print(f"当前目录: {script_dir}")
 
     # 检查必要的文件是否存在

@@ -79,7 +79,9 @@ def read_gitignore_patterns(source_dir: Path) -> list:
     return patterns
 
 
-def create_zip_file(source_dir: Path, zip_path: Path, exclude_patterns=None) -> bool:
+def create_zip_file(
+    source_dir: Path, zip_path: Path, exclude_patterns=None, mod_folder_name=None
+) -> bool:
     """
     创建zip文件
 
@@ -87,6 +89,7 @@ def create_zip_file(source_dir: Path, zip_path: Path, exclude_patterns=None) -> 
         source_dir: 源目录
         zip_path: 目标zip文件路径
         exclude_patterns: 要排除的文件模式列表
+        mod_folder_name: MOD文件夹名称（用于在ZIP中创建子目录）
 
     Returns:
         bool: 是否成功
@@ -113,6 +116,9 @@ def create_zip_file(source_dir: Path, zip_path: Path, exclude_patterns=None) -> 
     print(f"正在创建zip文件: {zip_path}")
     print(f"源目录: {source_dir}")
 
+    if mod_folder_name:
+        print(f"MOD文件夹名称: {mod_folder_name}")
+
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             # 遍历所有文件和目录
@@ -135,7 +141,13 @@ def create_zip_file(source_dir: Path, zip_path: Path, exclude_patterns=None) -> 
 
                     file_path = Path(root) / file
                     # 计算在zip中的相对路径
-                    arcname = file_path.relative_to(source_dir)
+                    rel_path = file_path.relative_to(source_dir)
+
+                    # 根据异星工厂MOD要求，文件应该放在mod_folder_name目录下
+                    if mod_folder_name:
+                        arcname = f"{mod_folder_name}/{rel_path}"
+                    else:
+                        arcname = rel_path
 
                     # 添加到zip
                     zipf.write(file_path, arcname)
@@ -361,7 +373,7 @@ def main():
 
     # 创建zip文件
     print("\n开始打包...")
-    success = create_zip_file(project_dir, zip_path)
+    success = create_zip_file(project_dir, zip_path, mod_folder_name=mod_folder_name)
 
     if not success:
         return 1
