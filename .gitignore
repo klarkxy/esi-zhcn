@@ -1,0 +1,4 @@
+log/
+todo.md
+*.backup
+__pycache__/

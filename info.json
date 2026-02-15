@@ -6,6 +6,7 @@
 	"description": "本模组仅包含「Exotic Space Industries: Remembrance」的汉化文件，依赖于原模组才能使用。",
 	"factorio_version":"2.0",
 	"dependencies":  [
-		"exotic-space-industries-remembrance"
+		"exotic-space-industries-remembrance",
+		"? Krastorio2-spaced-out"
 		]
 }
