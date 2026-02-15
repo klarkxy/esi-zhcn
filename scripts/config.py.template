@@ -5,7 +5,7 @@ AI翻译配置
 
 # DeepSeek API配置
 API_KEY = ""  # 在此处填入您的DeepSeek API密钥
-API_URL = "https://api.deepseek.com/v1/chat/completions"
+API_URL = ""
 MODEL_NAME = "deepseek-chat"
 
 # 翻译配置
