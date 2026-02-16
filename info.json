@@ -1,6 +1,6 @@
 {
 	"name": "esi-zhcn",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"title": "ESI: R 个人汉化",
 	"author": "Klarkxy",
 	"homepage": "https://github.com/klarkxy/esi-zhcn",
@@ -10,11 +10,13 @@
 		"exotic-space-industries-remembrance",
 		"? Krastorio2",
 		"? Krastorio2-spaced-out",
-		"? ash",
+		"? atan-ash",
 		"? module-inserter",
 		"? zzz-nonstandard-beacons",
 		"? quick-start-by-zichun",
-		"? rp_art_uti",
-		"? tesla_legacy_sa"
+		"? rp_art_util",
+		"? tesla_legacy_sa",
+		"? rp_steam_roboports",
+		"? rp_steam_intermediates"
 		]
 }

@@ -234,23 +234,19 @@ def update_cfg_file(
                     else:
                         new_lines.insert(insert_pos, f"{key}={value}\n")
 
-                    # 更新cfg_key_indices（需要更新所有后续行的索引）
-                    # 简单实现：重新构建索引
-                    cfg_key_indices.clear()
-                    for i, line in enumerate(new_lines):
-                        line_content = line.rstrip("\n")
-                        if line_content.strip().startswith("##"):
-                            clean_line = line_content.strip()[2:].strip()
-                            kv_match = re.match(r"^([^=]+)=(.*)$", clean_line)
-                            if kv_match:
-                                key_found = kv_match.group(1).strip()
-                                cfg_key_indices[(section, key_found)] = i
-                                cfg_commented.add((section, key_found))
-                        else:
-                            kv_match = re.match(r"^\s*([^=]+)=(.*)$", line_content)
-                            if kv_match:
-                                key_found = kv_match.group(1).strip()
-                                cfg_key_indices[(section, key_found)] = i
+                    # 更新cfg_key_indices（只添加新条目的索引）
+                    # 注意：这里需要确定正确的section
+                    # 由于我们是在section中插入，所以使用传入的section参数
+                    cfg_key_indices[(section, key)] = insert_pos
+                    if is_commented:
+                        cfg_commented.add((section, key))
+
+                    # 更新所有后续条目的行索引（因为插入了一行，后面的行都下移了一行）
+                    for (sect, k), line_num in list(cfg_key_indices.items()):
+                        if line_num >= insert_pos and not (
+                            sect == section and k == key
+                        ):
+                            cfg_key_indices[(sect, k)] = line_num + 1
 
                     added_count += 1
 
