@@ -7,7 +7,7 @@ AI 翻译模块 - 重构版
 import re
 import requests
 import concurrent.futures
-from typing import Dict, List, Optional, Any, Callable, Tuple
+from typing import Dict, List, Optional, Any, Callable, Tuple, Set
 from dataclasses import dataclass
 import time
 
@@ -306,6 +306,7 @@ class AITranslator:
         batch_size: int = 20,
         max_workers: int = 5,
         glossary_path: Optional[str] = None,
+        whitelist_path: Optional[str] = None,
     ):
         """
         初始化 AI 翻译器
@@ -318,6 +319,7 @@ class AITranslator:
             batch_size: 批量大小
             max_workers: 最大工作线程数
             glossary_path: 名词表文件路径
+            whitelist_path: 白名单文件路径
         """
         # 创建 AI 客户端
         self.client = AIClient(
@@ -336,46 +338,14 @@ class AITranslator:
         if glossary_path:
             self.load_glossary(glossary_path)
 
+        # 白名单
+        self.whitelist: Set[str] = set()
+        if whitelist_path:
+            self.load_whitelist(whitelist_path)
+
     def is_english_text(self, text: str) -> bool:
         """判断文本是否主要是英文"""
-        if not text.strip():
-            return False
-
-        # 检查是否包含中文字符
-        if re.search(r"[\u4e00-\u9fff]", text):
-            return False
-
-        # 检查是否包含拉丁字母（a-zA-Z）
-        if not re.search(r"[a-zA-Z]", text):
-            return False  # 不包含拉丁字母，不是英文
-
-        # 如果文本只包含拉丁字母、数字、空格和常见标点，假设是英文
-        import string
-
-        # 计算拉丁字母和常见英文标点的数量
-        latin_and_punct = 0
-        total_chars = 0
-
-        for char in text:
-            if char in string.ascii_letters or char in string.digits:
-                latin_and_punct += 1
-            elif char in " .,!?:;-_'\"()[]{}<>/\\|=+&%$#@":
-                latin_and_punct += 1
-            elif char == "\n" or char == "\t" or char == "\r":
-                continue  # 忽略控制字符
-            else:
-                # 其他字符（可能是其他语言的字符）
-                pass
-            total_chars += 1
-
-        if total_chars == 0:
-            return False
-
-        # 如果超过70%的字符是拉丁字母或英文标点，则认为是英文
-        if latin_and_punct / total_chars >= 0.7:
-            return True
-
-        return False
+        return _is_english_text_logic(text)
 
     def needs_translation(self, en_value: str, zh_value: Optional[str]) -> bool:
         """判断是否需要翻译"""
@@ -383,29 +353,34 @@ class AITranslator:
         if not en_value or en_value.strip() == "":
             return False
 
-        # 检查英文值是否纯粹由变量构成（如__ENTITY__kr-mineral-water__）
-        # 这类值不应该被翻译，应该原样保留
-        # 变量格式: __开头，包含字母、数字、下划线、连字符，__结尾
-        variable_pattern = r"^__[A-Za-z0-9_-]+__$"
-        if re.match(variable_pattern, en_value.strip()):
-            # 纯粹由单个变量构成的值，不应该翻译
+        # 检查是否在白名单中（完全匹配）
+        if en_value.strip() in self.whitelist:
             return False
 
-        # 检查英文值是否只包含变量（可能多个变量组合）
-        # 例如 "__ENTITY__kr-mineral-water____ITEM__test__"
-        variable_only_pattern = r"^(?:__[A-Za-z0-9_-]+__)+$"
-        if re.match(variable_only_pattern, en_value.strip()):
-            # 只包含变量的值，不应该翻译
+        # 检查是否包含白名单中的词（部分匹配）
+        for word in self.whitelist:
+            if word and word in en_value:
+                # 如果白名单词出现在英文值中，且该词是独立的（前后是单词边界）
+                pattern = r"\b" + re.escape(word) + r"\b"
+                if re.search(pattern, en_value, re.IGNORECASE):
+                    return False
+
+        # 检查英文值是否只包含变量（如__ENTITY__kr-mineral-water__）
+        # 这类值不应该被翻译，应该原样保留
+        if _contains_only_variables(en_value):
+            return False
+
+        # 检查英文值是否以中括号格式开头（如 [img=...]、[entity=...] 等）
+        # 这类值不应该被翻译，应该原样保留
+        if _starts_with_bracket_format(en_value):
             return False
 
         # 如果中文值不存在，需要翻译
         if not zh_value:
             return True
 
-        # 检查英文值中是否包含"__xxx__"模式的变量
-        variable_pattern = r"__[A-Za-z0-9_]+__"
-        en_variables = re.findall(variable_pattern, en_value)
-
+        # 检查英文值中是否包含变量，并验证中文值是否也包含这些变量
+        en_variables = _extract_variables(en_value)
         if en_variables:
             # 如果英文值包含变量，检查中文值是否也包含这些变量
             if zh_value:
@@ -458,6 +433,35 @@ class AITranslator:
 
         except Exception as e:
             print(f"加载名词表失败: {e}")
+
+    def load_whitelist(self, whitelist_path: str) -> None:
+        """
+        加载白名单文件
+
+        Args:
+            whitelist_path: 白名单文件路径
+        """
+        try:
+            from pathlib import Path
+
+            whitelist_file = Path(whitelist_path)
+            if not whitelist_file.exists():
+                print(f"警告: 白名单文件不存在: {whitelist_path}")
+                return
+
+            with open(whitelist_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+
+                    # 添加白名单词（不区分大小写，但保留原始大小写用于显示）
+                    self.whitelist.add(line)
+
+            print(f"已加载白名单，包含 {len(self.whitelist)} 个专有名词")
+
+        except Exception as e:
+            print(f"加载白名单失败: {e}")
 
     def _create_batch_prompt(self, items: List[TranslationItem]) -> str:
         """
@@ -585,6 +589,7 @@ def create_batch_translator(
     batch_size: Optional[int] = None,
     max_workers: int = 10,
     glossary_path: Optional[str] = None,
+    whitelist_path: Optional[str] = None,
 ) -> AITranslator:
     """
     创建批量翻译器（工厂函数）
@@ -595,6 +600,7 @@ def create_batch_translator(
         batch_size: 批量大小，如果为None则使用配置文件中的值
         max_workers: 最大工作线程数（增加默认值以加快速度）
         glossary_path: 名词表文件路径
+        whitelist_path: 白名单文件路径
 
     Returns:
         配置好的 AITranslator 实例
@@ -632,6 +638,7 @@ def create_batch_translator(
         batch_size=batch_size,
         max_workers=max_workers,
         glossary_path=glossary_path,
+        whitelist_path=whitelist_path,
     )
 
 
@@ -649,10 +656,89 @@ __all__ = [
 ]
 
 
+# 模块级私有函数，包含 is_english_text 的核心逻辑
+def _is_english_text_logic(text: str) -> bool:
+    """判断文本是否主要是英文（核心逻辑）"""
+    if not text.strip():
+        return False
+
+    # 检查是否包含中文字符
+    if re.search(r"[\u4e00-\u9fff]", text):
+        return False
+
+    # 检查是否包含拉丁字母（a-zA-Z）
+    if not re.search(r"[a-zA-Z]", text):
+        return False  # 不包含拉丁字母，不是英文
+
+    # 如果文本只包含拉丁字母、数字、空格和常见标点，假设是英文
+    import string
+
+    # 计算拉丁字母和常见英文标点的数量
+    latin_and_punct = 0
+    total_chars = 0
+
+    for char in text:
+        if char in string.ascii_letters or char in string.digits:
+            latin_and_punct += 1
+        elif char in " .,!?:;-_'\"()[]{}<>/\\|=+&%$#@":
+            latin_and_punct += 1
+        elif char == "\n" or char == "\t" or char == "\r":
+            continue  # 忽略控制字符
+        else:
+            # 其他字符（可能是其他语言的字符）
+            pass
+        total_chars += 1
+
+    if total_chars == 0:
+        return False
+
+    # 如果超过70%的字符是拉丁字母或英文标点，则认为是英文
+    if latin_and_punct / total_chars >= 0.7:
+        return True
+
+    return False
+
+
+# 模块级私有函数，检查文本是否只包含变量
+def _contains_only_variables(text: str) -> bool:
+    """检查文本是否只包含变量（如 __ENTITY__xxx__ 等）"""
+    text = text.strip()
+    if not text:
+        return False
+
+    # 检查是否纯粹由单个变量构成
+    variable_pattern = r"^__[A-Za-z0-9_-]+__$"
+    if re.match(variable_pattern, text):
+        return True
+
+    # 检查是否只包含变量（可能多个变量组合）
+    variable_only_pattern = r"^(?:__[A-Za-z0-9_-]+__)+$"
+    if re.match(variable_only_pattern, text):
+        return True
+
+    return False
+
+
+# 模块级私有函数，检查文本是否以中括号格式开头
+def _starts_with_bracket_format(text: str) -> bool:
+    """检查文本是否以中括号格式开头（如 [img=...]、[entity=...] 等）"""
+    text = text.strip()
+    if not text:
+        return False
+
+    # 匹配以 [ 开头，包含 =，以 ] 结尾的格式
+    bracket_pattern = r"^\[[a-zA-Z]+=[^\]]+\]"
+    return bool(re.match(bracket_pattern, text))
+
+
+# 模块级私有函数，提取文本中的所有变量
+def _extract_variables(text: str) -> List[str]:
+    """提取文本中的所有变量（__xxx__ 格式）"""
+    variable_pattern = r"__[A-Za-z0-9_]+__"
+    return re.findall(variable_pattern, text)
+
+
 # 导出独立函数，方便其他脚本使用
 def is_english_text(text: str) -> bool:
     """判断文本是否主要是英文（独立函数版本）"""
-    translator = AITranslator(
-        api_key="dummy", api_url="", model_name="", translation_options={}
-    )
-    return translator.is_english_text(text)
+    return _is_english_text_logic(text)

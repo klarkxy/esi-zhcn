@@ -113,6 +113,7 @@ def translate_file(
     zh_file: Path,
     backup: bool = True,
     glossary_path: Optional[str] = None,
+    whitelist_path: Optional[str] = None,
 ) -> Tuple[int, int, int]:
     """
     翻译英文词条到中文文件中
@@ -122,12 +123,15 @@ def translate_file(
         zh_file: 中文文件路径
         backup: 是否创建备份
         glossary_path: 名词表文件路径
+        whitelist_path: 白名单文件路径
 
     Returns:
         (新增翻译数, 更新翻译数, 保留翻译数)
     """
-    # 创建批量翻译器（使用配置文件中的BATCH_SIZE和名词表）
-    translator = BatchTranslator(max_workers=5, glossary_path=glossary_path)
+    # 创建批量翻译器（使用配置文件中的BATCH_SIZE、名词表和白名单）
+    translator = BatchTranslator(
+        max_workers=5, glossary_path=glossary_path, whitelist_path=whitelist_path
+    )
 
     # 解析文件
     en_sections, en_commented, en_lines, en_key_indices = parse_cfg_file(en_file)
@@ -177,6 +181,7 @@ def process_single_file(
     en_file: Path,
     zh_file: Path,
     glossary_str: Optional[str],
+    whitelist_str: Optional[str],
     stats: Dict[str, int],
 ) -> None:
     """
@@ -186,6 +191,7 @@ def process_single_file(
         en_file: 英文文件路径
         zh_file: 中文文件路径
         glossary_str: 名词表路径字符串
+        whitelist_str: 白名单路径字符串
         stats: 统计信息字典
     """
     en_filename = en_file.name
@@ -205,7 +211,9 @@ def process_single_file(
         print(f"中文文件已存在，开始翻译...")
 
     # 翻译文件
-    added, updated, kept = translate_file(en_file, zh_file, glossary_path=glossary_str)
+    added, updated, kept = translate_file(
+        en_file, zh_file, glossary_path=glossary_str, whitelist_path=whitelist_str
+    )
 
     stats["added"] += added
     stats["updated"] += updated
@@ -230,6 +238,10 @@ def main():
     glossary_path = base_dir / "名词表.txt"
     glossary_str = str(glossary_path) if glossary_path.exists() else None
 
+    # 白名单路径
+    whitelist_path = base_dir / "whitelist.txt"
+    whitelist_str = str(whitelist_path) if whitelist_path.exists() else None
+
     if not en_dir.exists():
         print(f"错误: 英文目录不存在: {en_dir}")
         return
@@ -251,6 +263,10 @@ def main():
         print(f"使用名词表: {glossary_str}")
     else:
         print(f"警告: 名词表文件不存在，将不使用名词表参考")
+    if whitelist_str:
+        print(f"使用白名单: {whitelist_str}")
+    else:
+        print(f"警告: 白名单文件不存在，将不使用白名单")
     print(f"找到 {len(en_files)} 个英文文件")
     print()
 
@@ -266,7 +282,7 @@ def main():
     for en_file in en_files:
         zh_filename = get_zh_filename(en_file.name)
         zh_file = zh_dir / zh_filename
-        process_single_file(en_file, zh_file, glossary_str, stats)
+        process_single_file(en_file, zh_file, glossary_str, whitelist_str, stats)
 
     # 输出汇总信息
     print("=" * 60)
@@ -283,6 +299,9 @@ def main():
 
     if glossary_str:
         print(f"\n注意: 翻译时已使用名词表参考，确保术语一致性。")
+
+    if whitelist_str:
+        print(f"注意: 翻译时已使用白名单，专有名词将不会被翻译。")
 
     print(f"\n完成!")
 
