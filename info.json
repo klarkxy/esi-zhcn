@@ -9,6 +9,8 @@
 	"dependencies":  [
 		"exotic-space-industries-remembrance",
 		"? Krastorio2",
-		"? Krastorio2-spaced-out"
+		"? Krastorio2-spaced-out",
+		"? ash",
+		"? module-inserter"
 		]
 }
