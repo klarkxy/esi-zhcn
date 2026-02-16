@@ -1,6 +1,6 @@
 {
 	"name": "esi-zhcn",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"title": "ESI: R 个人汉化",
 	"author": "Klarkxy",
 	"homepage": "https://github.com/klarkxy/esi-zhcn",
@@ -11,6 +11,10 @@
 		"? Krastorio2",
 		"? Krastorio2-spaced-out",
 		"? ash",
-		"? module-inserter"
+		"? module-inserter",
+		"? zzz-nonstandard-beacons",
+		"? quick-start-by-zichun",
+		"? rp_art_uti",
+		"? tesla_legacy_sa"
 		]
 }
