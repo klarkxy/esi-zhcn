@@ -4,6 +4,8 @@
 from pathlib import Path
 from typing import Dict, List, Tuple, Set, Optional
 import sys
+import json
+import datetime
 
 # 导入 AI 翻译模块
 try:
@@ -51,6 +53,9 @@ def collect_translation_items(
     """
     items = []
 
+    # 使用集合来跟踪已经处理过的键，避免重复
+    processed_keys = set()
+
     # 首先收集所有需要处理的键，按它们在英文文件中的出现顺序排序
     all_keys = []
     for (section, key), line_num in en_key_indices.items():
@@ -61,6 +66,14 @@ def collect_translation_items(
 
     # 收集需要翻译的项目
     for line_num, section, key in all_keys:
+        # 检查是否已经处理过这个键（避免重复）
+        key_id = (section, key)
+        if key_id in processed_keys:
+            print(f"警告: 跳过重复的键: {section}.{key} (行号: {line_num})")
+            continue
+
+        processed_keys.add(key_id)
+
         en_value = en_sections.get(section, {}).get(key)
         if en_value is None:
             continue
@@ -153,6 +166,9 @@ def translate_file(
     # 计算保留的词条数
     total_keys = len(en_key_indices)
     kept_count = total_keys - added - updated
+
+    # 记录翻译日志
+    log_translation(en_file, zh_file, items, translations, added, updated, kept_count)
 
     return added, updated, kept_count
 
@@ -269,6 +285,71 @@ def main():
         print(f"\n注意: 翻译时已使用名词表参考，确保术语一致性。")
 
     print(f"\n完成!")
+
+
+def log_translation(
+    en_file: Path,
+    zh_file: Path,
+    items: List[TranslationItem],
+    translations: List[str],
+    added: int,
+    updated: int,
+    kept: int,
+) -> None:
+    """
+    记录翻译日志到logs/目录
+
+    Args:
+        en_file: 英文文件路径
+        zh_file: 中文文件路径
+        items: 翻译项目列表
+        translations: 翻译结果列表
+        added: 新增翻译数
+        updated: 更新翻译数
+        kept: 保留翻译数
+    """
+    # 确保logs目录存在
+    logs_dir = Path(__file__).parent.parent / "logs"
+    logs_dir.mkdir(exist_ok=True)
+
+    # 生成日志文件名
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_filename = f"translation_{en_file.stem}_{timestamp}.json"
+    log_file = logs_dir / log_filename
+
+    # 准备日志数据
+    log_data = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "en_file": str(en_file),
+        "zh_file": str(zh_file),
+        "summary": {
+            "total_items": len(items),
+            "added": added,
+            "updated": updated,
+            "kept": kept,
+        },
+        "translations": [],
+    }
+
+    # 添加每个翻译项目的详细信息
+    for i, (item, translation) in enumerate(zip(items, translations)):
+        translation_entry = {
+            "index": i,
+            "section": item.section,
+            "key": item.key,
+            "en_value": item.en_value,
+            "previous_zh_value": item.zh_value,
+            "new_zh_value": translation,
+            "is_commented": item.is_commented,
+            "line_num": item.line_num,
+        }
+        log_data["translations"].append(translation_entry)
+
+    # 写入日志文件
+    with open(log_file, "w", encoding="utf-8") as f:
+        json.dump(log_data, f, ensure_ascii=False, indent=2)
+
+    print(f"翻译日志已保存到: {log_file}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 log/
+logs/
 todo.md
 *.backup
 __pycache__/

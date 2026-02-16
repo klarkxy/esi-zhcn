@@ -379,10 +379,27 @@ class AITranslator:
 
     def needs_translation(self, en_value: str, zh_value: Optional[str]) -> bool:
         """判断是否需要翻译"""
-        if not zh_value:
-            return True
+        # 如果英文值是空字符串，不应该翻译
+        if not en_value or en_value.strip() == "":
+            return False
 
-        if self.is_english_text(zh_value):
+        # 检查英文值是否纯粹由变量构成（如__ENTITY__kr-mineral-water__）
+        # 这类值不应该被翻译，应该原样保留
+        # 变量格式: __开头，包含字母、数字、下划线、连字符，__结尾
+        variable_pattern = r"^__[A-Za-z0-9_-]+__$"
+        if re.match(variable_pattern, en_value.strip()):
+            # 纯粹由单个变量构成的值，不应该翻译
+            return False
+
+        # 检查英文值是否只包含变量（可能多个变量组合）
+        # 例如 "__ENTITY__kr-mineral-water____ITEM__test__"
+        variable_only_pattern = r"^(?:__[A-Za-z0-9_-]+__)+$"
+        if re.match(variable_only_pattern, en_value.strip()):
+            # 只包含变量的值，不应该翻译
+            return False
+
+        # 如果中文值不存在，需要翻译
+        if not zh_value:
             return True
 
         # 检查英文值中是否包含"__xxx__"模式的变量
@@ -396,6 +413,13 @@ class AITranslator:
                     if var not in zh_value:
                         # 中文值缺少英文值中的某个变量，需要重新翻译
                         return True
+                # 如果中文值包含了所有变量，继续检查是否是英文
+                # 如果中文值是英文，仍然需要翻译
+                pass
+
+        # 如果中文值主要是英文，需要翻译
+        if self.is_english_text(zh_value):
+            return True
 
         return False
 
